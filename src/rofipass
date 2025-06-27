@@ -199,7 +199,7 @@ main() {
 <span color='${label}'>Copy: </span><span color='${help_color}'>${kb_copy_otp}</span>: Copy OTP <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_copy_email}</span>: Copy Email"
   fi
 
-  pass=$(find "$passdir" -type f -name '*.gpg' -printf '%P\n' | awk -F. '{print $1}')
+  pass=$(find "$passdir" -type f -name '*.gpg' -printf '%P\n' | sed 's/\.gpg//')
   menu=$(echo "${pass}" | _rofi -p "$mode" -mesg "${HELP}" -kb-custom-1 "${kb_add_pass}" -kb-custom-2 "${kb_copy_otp}" -kb-custom-3 "${kb_delete}" -kb-custom-4 "${kb_edit}" -kb-custom-5 "${kb_close_tomb}" -kb-custom-6 "${kb_open_tomb}" -kb-custom-7 "${kb_copy_email}" -kb-custom-8 "${kb_add_otp}")
 
   val=$?
