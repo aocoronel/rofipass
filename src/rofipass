@@ -1,77 +1,101 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 
-passdir=${PASSWORD_STORE_DIR:-$HOME/.password-store}
-
-[[ ! -d "$passdir" ]] && _error "No password directory found!" "Pass: Error" "low"
-
-kb_copy_email="Ctrl+2" # EMAIL
-kb_copy_otp="Ctrl-1"   # MODE
-kb_add_pass="Ctrl+r"   # PASSWORD
-kb_add_otp="Ctrl+t"    # TOTP
-kb_delete="Ctrl-x"     # DELETE
-kb_edit="Ctrl+y"       # EDIT
-kb_close_tomb="Ctrl-z" # CLOSE TOMB
-kb_open_tomb="Ctrl-o"  # OPEN TOMB
+### Colors
 
 help_color="#7c5cff"
 div_color="#334433"
 label="#f067fc"
 
-clipmethod="$XDG_SESSION_TYPE"
+###
 
-check_term() {
-  [[ -n "$term" ]] && return
-  for cmd in "$@"; do
-    if command -v "$cmd" &>/dev/null; then
-      term="$cmd"
-      break
-    fi
-  done
+### Bindings
+
+kb_copy_email="Ctrl+2" # EMAIL
+kb_copy_otp="Ctrl-1"   # COPY TOTP
+kb_add_pass="Ctrl+r"   # PASSWORD
+kb_add_otp="Ctrl+t"    # ADD TOTP
+kb_delete="Ctrl-x"     # DELETE
+kb_edit="Ctrl+y"       # EDIT
+kb_close_tomb="Ctrl-z" # CLOSE TOMB
+kb_open_tomb="Ctrl-o"  # OPEN TOMB
+
+###
+
+clipmethod="$XDG_SESSION_TYPE"
+passdir=${PASSWORD_STORE_DIR:-$HOME/.password-store}
+
+COLOR_YELLOW="$(tput setaf 226)"
+COLOR_RED="$(tput setaf 196)"
+COLOR_GREEN="$(tput setaf 82)"
+COLOR_BLUE="$(tput setaf 87)"
+COLOR_RESET=$(tput sgr0)
+
+printfc() {
+  mode=$1
+  case $mode in
+  "ERROR" | "FATAL")
+    color="$COLOR_RED"
+    ;;
+  "WARN")
+    mode="WARNING"
+    color="$COLOR_YELLOW"
+    ;;
+  "DEBUG")
+    color="$COLOR_BLUE"
+    ;;
+  "INFO")
+    color="$COLOR_GREEN"
+    ;;
+  esac
+  text=$2
+  printf "%s[%s]:%s %s\n" "${color}" "${mode}" "${COLOR_RESET}" "${text}"
 }
 
 check_command() {
   for cmd in "$@"; do
-    if ! command -v "$cmd" &>/dev/null; then
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      printfc FATAL "$cmd is not installed."
       return 1
     fi
   done
 }
 
-check_command rofi pass || echo "Error: $cmd could not be found. Please install it." >&2
-
-function _notify() {
-  local message="$1"
-  local header="$2"
-  local urgency="$3"
+_notify() {
+  message="$1"
+  header="rofipass"
+  urgency="$2"
   echo "$message"
-  notify-send -u "$urgency" "$header" "$message" --expire-time=4000 --wait
+  notify-send -u "$urgency" "$header" "$message" --expire-time="$time"000 --wait
 }
 
-function _error() {
-  _notify "$1" "$2" "$3"
+die() {
+  mode=$1
+  message=$2
+  urgency=$3
+
+  printfc "$mode" "$message"
+  _notify "$message" "$urgency"
   exit 1
 }
 
-function version() {
-  echo "v.1.0.0"
+version() {
+  echo "v1.1.0"
 }
 
-function usage() {
+usage() {
   cat <<EOF
-  ---------------------------------------------------
-  ---------------------rofi-pass---------------------
-  ---------------------------------------------------
-  -------------A rofi extension for pass-------------
-  ---------------------------------------------------
+rofipass | A rofi extension for pass
 
-Usage: pass-rofi [options] <command> [arguments]
+Usage: rofipass [OPTIONS] <COMMAND>
 
 Options:
+  -e <EDITOR>    Set editor
   -f             Lift swap restrictions (for tomb)
   -h             Display this help message and exit
-  -l             Default password length on generation
-  -t             Default terminal emulator (for tomb)
+  -l <LENGTH>    Default password length on generation
+  -t <TERM>      Default terminal emulator (for tomb)
   -v             Display the current version number
+  -T <SECONDS>   Clearing time
 
 Commands:
   help                     Display this help message and exit
@@ -82,37 +106,35 @@ Examples:
 EOF
 }
 
-function _rofi() {
+_rofi() {
   rofi -dmenu -i -no-levenshtein-sort -width 1000 "$@"
 }
 
-if ! command -v dunst &>/dev/null; then
-  echo "dunst could not be found. Please install it."
-  exit 1
-fi
-
-function copy_email() {
+copy_email() {
   email=$(pass "$menu" | sed -n 's/^email=//p')
-  if [ "$clipmethod" = "x11" ]; then
-    xclip "$email" || _error "Error copying the email!" "pass: email" "critical"
-    _notify "Copied to clipboard. Clearing in 5 seconds" "Pass: Email" "normal"
-  elif [ "$clipmethod" = "wayland" ]; then
-    wl-copy "$email" || _error "Error copying the email!" "pass: email" "critical"
-    _notify "Copied to clipboard. Clearing in 5 seconds" "Pass: Email" "normal"
-  fi
+  case "$clipmethod" in
+  "x11")
+    xclip "$email" || die FATAL "failed to copy the email." "critical"
+    _notify "Copied to clipboard. Clearing in $time seconds" "normal"
+    ;;
+  "wayland")
+    wl-copy "$email" || die FATAL "failed to copy the email." "critical"
+    _notify "Copied to clipboard. Clearing in $time seconds" "normal"
+    ;;
+  esac
   clearboard
 }
 
-function append_otp() {
-  check_command zbarimg || _error "zbarimg is not installed" "Pass: Error" "normal"
+append_otp() {
+  check_command zbarimg || die FATAL "zbarimg is not installed." "critical"
   case "$clipmethod" in
-  x11)
-    xclip -o | zbarimg -q --raw - | pass otp append "$menu" || _error "Failed to append OTP to $menu" "Pass: Error" "critical"
-    _notify "Insert OTP successfully" "Pass: OTP" "normal"
+  "x11")
+    xclip -o | zbarimg -q --raw - | pass otp append "$menu" || die FATAL "failed to append OTP to $menu" "critical"
+    _notify "Inserted OTP successfully to $menu" "normal"
     ;;
-  wayland)
-    wl-paste --type image/png | zbarimg -q --raw - | pass otp append "$menu" || _error "Failed to append OTP to $menu" "Pass: Error" "critical"
-    _notify "Insert OTP successfully" "Pass: OTP" "normal"
+  "wayland")
+    wl-paste --type image/png | zbarimg -q --raw - | pass otp append "$menu" || die FATAL "failed to append OTP to $menu" "critical"
+    _notify "Inserted OTP successfully to $menu" "normal"
     ;;
   esac
 }
@@ -121,76 +143,76 @@ clearboard() {
   [ -x "$(command -v dunst)" ] && dunstctl close-all
 
   case "$clipmethod" in
-  x11)
+  "x11")
     echo "" | xclip -sel clip
     ;;
-  wayland)
+  "wayland")
     [ -x "$(command -v cliphist)" ] && cliphist wipe
     echo "" | wl-copy
     ;;
   esac
 }
 
-function tomb_open() {
-  check_term ghostty kitty alacritty konsole wezterm foot xterm
-  if [ "$FORCE" == "true" ]; then
+tomb_open() {
+  if [ -n "$FORCE" ]; then
     $term -e sh -c "pass open -f"
   else
     $term -e sh -c "pass open"
   fi
 }
 
-function tomb_close() {
-  check_term ghostty kitty alacritty konsole wezterm foot xterm
+tomb_close() {
   $term -e sh -c "pass close"
   pass_val=$?
   if [ "$pass_val" -ne 0 ]; then
-    _error "Failed to close tomb!" "Pass: Tomb" "critical"
+    die FATAL "failed to close tomb." "critical"
   else
-    _notify "Your password tomb has been closed!" "Pass: Tomb" "normal"
+    _notify "Your password tomb has been closed!" "normal"
   fi
 }
 
-function deleteMenu() {
-  delask=$(echo -e "1. Yes\n2. No" | _rofi -p '> ' -mesg "<span color='${label}'>Really delete</span> <span color='${help_color}'>$menu?</span>")
+deleteMenu() {
+  delask=$(printf "1. Yes\n2. No" | _rofi -p '> ' -mesg "<span color='${label}'>Really delete</span> <span color='${help_color}'>$menu?</span>")
   val=$?
-  if [[ $val -eq 1 ]]; then
+  [ $val -eq 1 ] && {
     notify-send -u low "Pass: Delete" "Cancelled!"
-    mode=pass main
-  fi
-  if [[ "$delask" == "1. Yes" ]]; then
-    pass rm -f "$menu" && notify-send -u normal "Pass: Delete" "Deleted $menu"
-  fi
-  mode=pass main
+    main
+  }
+  [ "$delask" = "1. Yes" ] && pass rm -f "$menu" && notify-send -u normal "Pass: Delete" "Deleted $menu"
+  main
 }
 
-function addMenu() {
+add_password() {
   length=${length:-72}
   addmenu=$(echo | _rofi -p '> ' -mesg "<span color='${label}'>Usage: </span>Insert directory/passname")
   val=$?
-  if [[ $val -eq 1 ]]; then
-    notify-send -u low "Pass: Add" "Cancelled!"
-    mode=pass main
-  elif [[ $val -eq 0 ]]; then
+  if [ $val -eq 1 ]; then
+    _notify "Cancelled!" "low"
+    main
+  elif [ $val -eq 0 ]; then
     pass generate "$addmenu" "$length"
-    if [[ $val -eq 1 ]]; then
-      notify-send -u normal "Pass: Add" "An error occurred!"
-      mode=pass main
+    if [ $val -eq 1 ]; then
+      _notify ERROR "failed to add password"
+      main
     else
-      notify-send -u normal "Pass: Add" "Added $addmenu"
+      _notify "Added $addmenu" "normal"
     fi
   fi
-  mode=pass main
+  main
 }
 
-function editMenu() {
-  check_term ghostty kitty alacritty konsole wezterm foot xterm
-  editor=${EDITOR:-nano}
+edit_password() {
   $term -e sh -c "export EDITOR=\"$editor\"; pass edit \"$menu\""
 }
 
 main() {
-  if check_command tomb; then
+  if command -v "$cmd" >/dev/null 2>&1; then
+    enable_tomb=0
+  else
+    enable_tomb=1
+  fi
+
+  if [ "$enable_tomb" -eq 0 ]; then
     HELP="<span color='${label}'>Tomb: </span><span color='${help_color}'>${kb_close_tomb}</span>: Close Tomb <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_open_tomb}</span>: Open Tomb
 <span color='${label}'>Actions: </span><span color='${help_color}'>${kb_add_pass}</span>: Add <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_delete}</span>: Delete <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_edit}</span>: Edit <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_add_otp}</span>: Add OTP
 <span color='${label}'>Copy: </span><span color='${help_color}'>${kb_copy_otp}</span>: Copy OTP <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_copy_email}</span>: Copy Email"
@@ -207,29 +229,32 @@ main() {
   1) exit ;;
   12) deleteMenu ;;
   11) # OTP Copy
-    timeout 3 pass otp -c "$menu" || _error "Error copying the OTP!" "Pass: OTP" "critical"
-    _notify "Copied to clipboard. Clearing in 5 seconds" "Pass: OTP" "normal"
+    timeout 3 pass otp -c "$menu" || die ERROR "failed to copy OTP!" "normal"
+    _notify "Copied to clipboard. Clearing in $time seconds" "normal"
     clearboard
     ;;
-  10) addMenu ;;
-  13) editMenu ;;
-  14) tomb_close ;;
-  15) tomb_open ;;
+  10) add_password ;;
+  13) edit_password ;;
+  14) [ "$enable_tomb" -eq 0 ] && tomb_close ;;
+  15) [ "$enable_tomb" -eq 0 ] && tomb_open ;;
   16) copy_email ;;
   17) append_otp ;;
   0)
-    pass -c "$menu" || _error "Error copying the password!" "Pass: Copy" "critical"
-    _notify "Copied to clipboard. Clearing in 5 seconds" "Pass: Copy" "normal"
+    pass -c "$menu" || die ERROR "failed to copy the password!" "normal"
+    _notify "Copied to clipboard. Clearing in $time seconds" "normal"
     clearboard
     ;;
   esac
 }
 
-while getopts ":hvfl:t:" opt; do
+while getopts ":hvfl:t:T:e:" opt; do
   case "$opt" in
   h)
     usage
     exit 0
+    ;;
+  e)
+    editor="$OPTARG"
     ;;
   v)
     version
@@ -244,13 +269,24 @@ while getopts ":hvfl:t:" opt; do
   t)
     term="$OPTARG"
     ;;
+  T)
+    time="$OPTARG"
+    ;;
   ?)
-    echo "Error: Invalid option '-$OPTARG'" >&2
-    usage
+    printfc FATAL "invalid option '-$OPTARG'" >&2
+    exit 1
     ;;
   esac
 done
 
 shift $((OPTIND - 1))
 
-mode=pass main
+check_command rofi pass || exit 1
+
+[ ! -d "$passdir" ] && die FATAL "no password directory found!" "low"
+
+[ -z "$editor" ] && editor=${EDITOR:-nano}
+term=${term:-xterm}
+time=${time:-5}
+
+main
