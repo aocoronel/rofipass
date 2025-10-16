@@ -64,7 +64,7 @@ _notify() {
   message="$1"
   header="rofipass"
   urgency="$2"
-  time=${time:-$3}
+  time=${3:-$time}
   echo "$message"
   notify-send -u "$urgency" "$header" "$message" --expire-time="$time"000 --wait
 }
