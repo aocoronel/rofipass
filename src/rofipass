@@ -97,12 +97,8 @@ Options:
   -v             Display the current version number
   -T <SECONDS>   Clearing time
 
-Commands:
-  help                     Display this help message and exit
-  version                  Display the current version number
-
-Examples:
-  rofipass -f -l 72 -t kitty
+Example:
+  rofipass -f -l 72 -t kitty -e nvim -T 10
 EOF
 }
 

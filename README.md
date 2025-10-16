@@ -23,7 +23,7 @@
 
 ## Installation
 
-```
+```bash
 git clone https://github.com/aocoronel/rofipass
 cd rofipass
 chmod 700 src/rofipass
@@ -32,28 +32,22 @@ mv src/rofipass "$HOME/.local/bin"
 
 ## Usage
 
-```
-  ---------------------------------------------------
-  ---------------------rofi-pass---------------------
-  ---------------------------------------------------
-  -------------A rofi extension for pass-------------
-  ---------------------------------------------------
+```console
+rofipass | A rofi extension for pass
 
-Usage: pass-rofi [options] <command> [arguments]
+Usage: rofipass [OPTIONS] <COMMAND>
 
 Options:
+  -e <EDITOR>    Set editor
   -f             Lift swap restrictions (for tomb)
   -h             Display this help message and exit
-  -l             Default password length on generation
-  -t             Default terminal emulator (for tomb)
+  -l <LENGTH>    Default password length on generation
+  -t <TERM>      Default terminal emulator (for tomb)
   -v             Display the current version number
+  -T <SECONDS>   Clearing time
 
-Commands:
-  help                     Display this help message and exit
-  version                  Display the current version number
-
-Examples:
-  rofipass -f -l 72 -t foot
+Example:
+  rofipass -f -l 72 -t kitty -e nvim -T 10
 ```
 
 ### Managing the Files
