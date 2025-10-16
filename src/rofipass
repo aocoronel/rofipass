@@ -66,7 +66,11 @@ _notify() {
   urgency="$2"
   time=${3:-$time}
   echo "$message"
-  notify-send -u "$urgency" "$header" "$message" --expire-time="$time"000 --wait
+  if [ "$time" -eq 0 ]; then
+    notify-send -u "$urgency" "$header" "$message"
+  else
+    notify-send -u "$urgency" "$header" "$message" --expire-time="$time"000 --wait
+  fi
 }
 
 die() {
