@@ -161,7 +161,7 @@ tomb_close() {
   $term -e sh -c "pass close"
   pass_val=$?
   if [ "$pass_val" -ne 0 ]; then
-    die FATAL "failed to close tomb." "critical"
+    die FATAL "failed to close tomb." -u "critical"
   else
     _notify "Your password tomb has been closed!" "normal"
   fi
@@ -171,10 +171,10 @@ deleteMenu() {
   delask=$(printf "1. Yes\n2. No" | _rofi -p '> ' -mesg "<span color='${label}'>Really delete</span> <span color='${help_color}'>$menu?</span>")
   val=$?
   [ $val -eq 1 ] && {
-    notify-send -u low "Pass: Delete" "Cancelled!"
+    notify-send -u low "rofipass" "Cancelled!"
     main
   }
-  [ "$delask" = "1. Yes" ] && pass rm -f "$menu" && notify-send -u normal "Pass: Delete" "Deleted $menu"
+  [ "$delask" = "1. Yes" ] && pass rm -f "$menu" && _notify "Deleted $menu" "normal"
   main
 }
 
@@ -183,7 +183,7 @@ add_password() {
   addmenu=$(echo | _rofi -p '> ' -mesg "<span color='${label}'>Usage: </span>Insert directory/passname")
   val=$?
   if [ $val -eq 1 ]; then
-    _notify "Cancelled!" "low"
+    notify-send -u low "rofipass" "Cancelled!"
     main
   elif [ $val -eq 0 ]; then
     pass generate "$addmenu" "$length"
@@ -225,7 +225,7 @@ main() {
   fi
 
   HELP="$HELP
-<span color='${label}'>Copy: </span><span color='${help_color}'>${kb_copy_email}</span>: Copy Email"
+<span color='${label}'>Copy: </span><span color='${help_color}'>Enter</span>: Copy Password <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_copy_email}</span>: Copy Email"
 
   if [ "$enable_otp" -eq 0 ]; then
     OTP_HELP=" <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_copy_otp}</span>: Copy OTP"
