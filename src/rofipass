@@ -202,19 +202,40 @@ edit_password() {
 }
 
 main() {
-  if command -v "$cmd" >/dev/null 2>&1; then
-    enable_tomb=0
-  else
+  enable_tomb=0
+  enable_otp=0
+  enable_zbar=0
+
+  if ! command -v "tomb" >/dev/null 2>&1; then
     enable_tomb=1
+  fi
+  if ! command -v "zbarimg" >/dev/null 2>&1; then
+    enable_zbar=1
+  fi
+
+  pass otp -h >/dev/null 2>&1 || enable_otp=1
+
+  HELP=""
+
+  HELP="$HELP<span color='${label}'>Actions: </span><span color='${help_color}'>${kb_add_pass}</span>: Add <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_delete}</span>: Delete <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_edit}</span>: Edit"
+
+  if [ "$enable_zbar" -eq 0 ]; then
+    ZBAR_HELP=" <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_add_otp}</span>: Add OTP"
+    HELP="$HELP$ZBAR_HELP"
+  fi
+
+  HELP="$HELP
+<span color='${label}'>Copy: </span><span color='${help_color}'>${kb_copy_email}</span>: Copy Email"
+
+  if [ "$enable_otp" -eq 0 ]; then
+    OTP_HELP=" <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_copy_otp}</span>: Copy OTP"
+    HELP="$HELP$OTP_HELP"
   fi
 
   if [ "$enable_tomb" -eq 0 ]; then
-    HELP="<span color='${label}'>Tomb: </span><span color='${help_color}'>${kb_close_tomb}</span>: Close Tomb <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_open_tomb}</span>: Open Tomb
-<span color='${label}'>Actions: </span><span color='${help_color}'>${kb_add_pass}</span>: Add <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_delete}</span>: Delete <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_edit}</span>: Edit <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_add_otp}</span>: Add OTP
-<span color='${label}'>Copy: </span><span color='${help_color}'>${kb_copy_otp}</span>: Copy OTP <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_copy_email}</span>: Copy Email"
-  else
-    HELP="<span color='${label}'>Actions: </span><span color='${help_color}'>${kb_add_pass}</span>: Add <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_delete}</span>: Delete <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_edit}</span>: Edit <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_add_otp}</span>: Add OTP
-<span color='${label}'>Copy: </span><span color='${help_color}'>${kb_copy_otp}</span>: Copy OTP <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_copy_email}</span>: Copy Email"
+    TOMB_HELP="<span color='${label}'>Tomb: </span><span color='${help_color}'>${kb_close_tomb}</span>: Close Tomb <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_open_tomb}</span>: Open Tomb"
+    HELP="$HELP
+$TOMB_HELP"
   fi
 
   pass=$(find -L "$passdir" -type f -name '*.gpg' -printf '%P\n' | sed 's/\.gpg//')
@@ -225,16 +246,18 @@ main() {
   1) exit ;;
   12) deleteMenu ;;
   11) # OTP Copy
-    timeout 3 pass otp -c "$menu" || die ERROR "failed to copy OTP!" "normal"
-    _notify "Copied to clipboard. Clearing in $time seconds" "normal"
-    clearboard
+    [ "$enable_otp" -eq 0 ] && {
+      timeout 3 pass otp -c "$menu" || die ERROR "failed to copy OTP!" "normal"
+      _notify "Copied to clipboard. Clearing in $time seconds" "normal"
+      clearboard
+    }
     ;;
   10) add_password ;;
   13) edit_password ;;
   14) [ "$enable_tomb" -eq 0 ] && tomb_close ;;
   15) [ "$enable_tomb" -eq 0 ] && tomb_open ;;
   16) copy_email ;;
-  17) append_otp ;;
+  17) [ "$enable_zbar" -eq 0 ] && append_otp ;;
   0)
     pass -c "$menu" || die ERROR "failed to copy the password!" "normal"
     _notify "Copied to clipboard. Clearing in $time seconds" "normal"
