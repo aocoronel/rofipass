@@ -64,6 +64,7 @@ _notify() {
   message="$1"
   header="rofipass"
   urgency="$2"
+  time=${time:-$3}
   echo "$message"
   notify-send -u "$urgency" "$header" "$message" --expire-time="$time"000 --wait
 }
@@ -163,7 +164,7 @@ tomb_close() {
   if [ "$pass_val" -ne 0 ]; then
     die FATAL "failed to close tomb." -u "critical"
   else
-    _notify "Your password tomb has been closed!" "normal"
+    _notify "Your password tomb has been closed!" "normal" 0
   fi
 }
 
@@ -171,27 +172,30 @@ deleteMenu() {
   delask=$(printf "1. Yes\n2. No" | _rofi -p '> ' -mesg "<span color='${label}'>Really delete</span> <span color='${help_color}'>$menu?</span>")
   val=$?
   [ $val -eq 1 ] && {
-    notify-send -u low "rofipass" "Cancelled!"
+    _notify "Cancelled!" "low" 0
     main
   }
-  [ "$delask" = "1. Yes" ] && pass rm -f "$menu" && _notify "Deleted $menu" "normal"
+  [ "$delask" = "1. Yes" ] && pass rm -f "$menu" && _notify "Deleted $menu" "normal" 0
   main
 }
 
 add_password() {
   length=${length:-72}
-  addmenu=$(echo | _rofi -p '> ' -mesg "<span color='${label}'>Usage: </span>Insert directory/passname")
+  addmenu=$(
+    echo | _rofi -p '> ' -lines 0 \
+      -theme-str 'window { width: 25em; } listview { lines: 0; } entry { placeholder: "Enter password name"; }'
+  )
   val=$?
   if [ $val -eq 1 ]; then
-    notify-send -u low "rofipass" "Cancelled!"
+    _notify "Cancelled!" "low" 0
     main
   elif [ $val -eq 0 ]; then
     pass generate "$addmenu" "$length"
     if [ $val -eq 1 ]; then
-      _notify ERROR "failed to add password"
+      _notify ERROR "failed to add password" 0
       main
     else
-      _notify "Added $addmenu" "normal"
+      _notify "Added $addmenu" "normal" 0
     fi
   fi
   main
