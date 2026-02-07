@@ -1,15 +1,47 @@
 #!/usr/bin/env sh
 
-### Colors
+die() {
+  message=$1
+  COLOR_RED="$(tput setaf 1)"
+  COLOR_RESET=$(tput sgr0)
+  printf "%s[%s]:%s %s\n" "$COLOR_RED" "FATAL" "${COLOR_RESET}" "${message}"
+  exit 1
+}
 
+# Supported: X11 and Wayland
+clipmethod="$XDG_SESSION_TYPE"
+
+# Notify-send title
+notify_title="rofipass"
+
+# You can set your EDITOR, or let xdg-open handle it
+# If you use a terminal editor, you can set "st -e nano"
+[ -z "$EDITOR" ] && EDITOR=${EDITOR:-xdg-open}
+
+# Terminal to use
+# This is only used to open a terminal to interact with "tomb" to open
+# and close your encrypted passwordstore, since it requires sudo or doas
+term=${term:-xterm}
+
+# Waiting time to clear your clipboard in seconds
+time=${time:-5}
+
+passdir=${PASSWORD_STORE_DIR:-$HOME/.password-store}
+[ ! -d "$passdir" ] && die "no password directory found"
+
+# Dependencies
+
+[ -x "$(command -v rofi)" ] || die "rofi is not installed."
+[ -x "$(command -v pass)" ] || die "pass is not installed."
+
+# === Configuration ===
+
+# Colors
 help_color="#7c5cff"
 div_color="#334433"
 label="#f067fc"
 
-###
-
-### Bindings
-
+# Bindings
 kb_copy_email="Ctrl+2" # EMAIL
 kb_copy_otp="Ctrl-1"   # COPY TOTP
 kb_add_pass="Ctrl+r"   # PASSWORD
@@ -19,138 +51,121 @@ kb_edit="Ctrl+y"       # EDIT
 kb_close_tomb="Ctrl-z" # CLOSE TOMB
 kb_open_tomb="Ctrl-o"  # OPEN TOMB
 
-###
+# === rofipass ===
 
-clipmethod="$XDG_SESSION_TYPE"
-passdir=${PASSWORD_STORE_DIR:-$HOME/.password-store}
-
-COLOR_YELLOW="$(tput setaf 226)"
-COLOR_RED="$(tput setaf 196)"
-COLOR_GREEN="$(tput setaf 82)"
-COLOR_BLUE="$(tput setaf 87)"
-COLOR_RESET=$(tput sgr0)
-
-printfc() {
-  mode=$1
-  case $mode in
-  "ERROR" | "FATAL")
-    color="$COLOR_RED"
-    ;;
-  "WARN")
-    mode="WARNING"
-    color="$COLOR_YELLOW"
-    ;;
-  "DEBUG")
-    color="$COLOR_BLUE"
-    ;;
-  "INFO")
-    color="$COLOR_GREEN"
-    ;;
-  esac
-  text=$2
-  printf "%s[%s]:%s %s\n" "${color}" "${mode}" "${COLOR_RESET}" "${text}"
-}
-
-check_command() {
-  for cmd in "$@"; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-      printfc FATAL "$cmd is not installed."
-      return 1
-    fi
-  done
-}
-
-_notify() {
+notify() {
   message="$1"
-  header="rofipass"
   urgency="$2"
-  time=${3:-$time}
-  echo "$message"
-  if [ "$time" -eq 0 ]; then
-    notify-send -u "$urgency" "$header" "$message"
-  else
-    notify-send -u "$urgency" "$header" "$message" --expire-time="$time"000 --wait
-  fi
+  echo "$message" # Message is logged to the tty on purpose
+  notify-send -u "$urgency" "$notify_title" "$message"
 }
 
-die() {
-  mode=$1
-  message=$2
-  urgency=$3
+notify_wait() {
+  message="$1"
+  echo "$message" # Message is logged to the tty on purpose
+  # The --expire-time and --wait options serve as a visual clue
+  # to show when your clipboard has been cleared.
+  notify-send -u "normal" "$notify_title" "$message" --expire-time="$time"000 --wait
+}
 
-  printfc "$mode" "$message"
-  _notify "$message" "$urgency"
-  exit 1
+die_notify() {
+  message=$1
+  notify "$message" "normal"
+  die "$message"
 }
 
 version() {
-  echo "v1.1.0"
+  echo "v1.2.0"
 }
 
 usage() {
   cat <<EOF
-rofipass | A rofi extension for pass
+rofipass | fully-featured rofi script for passwordstore
 
-Usage: rofipass [OPTIONS] <COMMAND>
+Usage: rofipass [OPTIONS]
 
 Options:
-  -e <EDITOR>    Set editor
-  -f             Lift swap restrictions (for tomb)
-  -h             Display this help message and exit
-  -l <LENGTH>    Default password length on generation
-  -t <TERM>      Default terminal emulator (for tomb)
-  -v             Display the current version number
-  -T <SECONDS>   Clearing time
+  -e <EDITOR>   Set editor
+  -f            Lift swap restrictions (tomb-only)
+  -h            Display this help message and exit
+  -l <LENGTH>   Default password length to be generated
+  -t <TERM>     Default terminal emulator (tomb-only)
+  -v            Display the current version number
+  -T <TIME>     Clearing time in seconds
 
 Example:
-  rofipass -f -l 72 -t kitty -e nvim -T 10
+  rofipass -f -l 72 -t kitty -e emacs -T 10
+  rofipass -f -l 72 -t kitty -e "st -e nvim" -T 10
 EOF
 }
 
 _rofi() {
-  rofi -dmenu -i -no-levenshtein-sort -width 1000 "$@"
+  rofi -p '🔑' -dmenu -i -no-levenshtein-sort -width 1000 "$@"
 }
 
+rofi_tiny() {
+  rofi -p '🔑' -dmenu -i -no-levenshtein-sort -width 1000 -lines 0 -theme-str "window { width: 25em; } listview { lines: $1; } entry { placeholder: '$2';}"
+}
+
+# If a line starts with email=myemail@mail.com, copies it
 copy_email() {
   email=$(pass "$menu" | sed -n 's/^email=//p')
+  [ -z "$email" ] && die_notify "$menu does not contain an email"
   case "$clipmethod" in
   "x11")
-    xclip "$email" || die FATAL "failed to copy the email." "critical"
-    _notify "Copied to clipboard. Clearing in $time seconds" "normal"
+    xclip "$email" || die_notify "failed to copy the email."
+    notify_wait "Copied to clipboard. Clearing in $time seconds" "normal"
     ;;
   "wayland")
-    wl-copy "$email" || die FATAL "failed to copy the email." "critical"
-    _notify "Copied to clipboard. Clearing in $time seconds" "normal"
+    wl-copy "$email" || die_notify "failed to copy the email."
+    notify_wait "Copied to clipboard. Clearing in $time seconds" "normal"
     ;;
   esac
   clearboard
 }
 
 append_otp() {
-  check_command zbarimg || die FATAL "zbarimg is not installed." "critical"
   case "$clipmethod" in
   "x11")
-    xclip -o | zbarimg -q --raw - | pass otp append "$menu" || die FATAL "failed to append OTP to $menu" "critical"
-    _notify "Inserted OTP successfully to $menu" "normal"
+    contents=$(xclip -selection clipboard -o)
     ;;
   "wayland")
-    wl-paste --type image/png | zbarimg -q --raw - | pass otp append "$menu" || die FATAL "failed to append OTP to $menu" "critical"
-    _notify "Inserted OTP successfully to $menu" "normal"
+    contents=$(wl-paste)
+    ;;
+  esac
+
+  err=$?
+
+  # If you don't have the QR code, this attempts to handle the secret key directly
+  if [ -n "$contents" ] && [ "$err" -eq 0 ]; then
+    otp_secret="otpauth://totp/passwordstore:none?secret=$contents&period=30&digits=6"
+    echo "$otp_secret" | pass otp append "$menu"
+    err=$?
+    [ "$err" -eq 0 ] && {
+      notify "Inserted OTP successfully to $menu" "normal"
+      return
+    }
+  fi
+
+  # If you have the QR code PNG saved to your clipboard, this attempts to parse it
+  [ -x "$(command -v zbarimg)" ] || die_notify "zbarimg is not installed."
+
+  case "$clipmethod" in
+  "x11")
+    xclip -o | zbarimg -q --raw - | pass otp append "$menu" || die_notify "failed to append OTP to $menu"
+    notify "Inserted OTP successfully to $menu" "normal"
+    ;;
+  "wayland")
+    wl-paste --type image/png | zbarimg -q --raw - | pass otp append "$menu" || die_notify "failed to append OTP to $menu"
+    notify "Inserted OTP successfully to $menu" "normal"
     ;;
   esac
 }
 
 clearboard() {
-  [ -x "$(command -v dunst)" ] && dunstctl close-all
-
   case "$clipmethod" in
-  "x11")
-    echo "" | xclip -sel clip
-    ;;
-  "wayland")
-    [ -x "$(command -v cliphist)" ] && cliphist wipe
-    echo "" | wl-copy
-    ;;
+  "x11") echo "" | xclip -sel clip ;;
+  "wayland") echo "" | wl-copy ;;
   esac
 }
 
@@ -166,59 +181,52 @@ tomb_close() {
   $term -e sh -c "pass close"
   pass_val=$?
   if [ "$pass_val" -ne 0 ]; then
-    die FATAL "failed to close tomb." -u "critical"
+    die_notify "failed to close tomb."
   else
-    _notify "Your password tomb has been closed!" "normal" 0
+    notify "Your password tomb has been closed" "normal" 0
   fi
 }
 
 deleteMenu() {
-  delask=$(printf "1. Yes\n2. No" | _rofi -p '> ' -mesg "<span color='${label}'>Really delete</span> <span color='${help_color}'>$menu?</span>")
+  delask=$(printf "1. Yes\n2. No" | rofi_tiny 2 "Really delete?")
   val=$?
   [ $val -eq 1 ] && {
-    _notify "Cancelled!" "low" 0
+    notify "Cancelled" "low" 0
     main
   }
-  [ "$delask" = "1. Yes" ] && pass rm -f "$menu" && _notify "Deleted $menu" "normal" 0
+  [ "$delask" = "1. Yes" ] && pass rm -f "$menu" && notify "Deleted $menu" "normal" 0
   main
 }
 
 add_password() {
   length=${length:-72}
-  addmenu=$(
-    echo | _rofi -p '> ' -lines 0 \
-      -theme-str 'window { width: 25em; } listview { lines: 0; } entry { placeholder: "Enter password name"; }'
-  )
+  addmenu=$(rofi_tiny 0 "Enter password name:")
   val=$?
   if [ $val -eq 1 ]; then
-    _notify "Cancelled!" "low" 0
+    notify "Cancelled" "low" 0
     main
   elif [ $val -eq 0 ]; then
     pass generate "$addmenu" "$length"
     if [ $val -eq 1 ]; then
-      _notify ERROR "failed to add password" 0
+      notify FATAL "failed to add password" 0
       main
     else
-      _notify "Added $addmenu" "normal" 0
+      notify "Added $addmenu" "normal" 0
     fi
   fi
   main
 }
 
 edit_password() {
-  $term -e sh -c "export EDITOR=\"$editor\"; pass edit \"$menu\""
+  pass edit "$menu" || die "$EDITOR: failed to edit $menu"
 }
 
 main() {
   enable_tomb=0
   enable_otp=0
-  enable_zbar=0
 
   if ! command -v "tomb" >/dev/null 2>&1; then
     enable_tomb=1
-  fi
-  if ! command -v "zbarimg" >/dev/null 2>&1; then
-    enable_zbar=1
   fi
 
   pass otp -h >/dev/null 2>&1 || enable_otp=1
@@ -227,10 +235,8 @@ main() {
 
   HELP="$HELP<span color='${label}'>Actions: </span><span color='${help_color}'>${kb_add_pass}</span>: Add <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_delete}</span>: Delete <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_edit}</span>: Edit"
 
-  if [ "$enable_zbar" -eq 0 ]; then
-    ZBAR_HELP=" <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_add_otp}</span>: Add OTP"
-    HELP="$HELP$ZBAR_HELP"
-  fi
+  ZBAR_HELP=" <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_add_otp}</span>: Add OTP"
+  HELP="$HELP$ZBAR_HELP"
 
   HELP="$HELP
 <span color='${label}'>Copy: </span><span color='${help_color}'>Enter</span>: Copy Password <span color='${div_color}'>|</span> <span color='${help_color}'>${kb_copy_email}</span>: Copy Email"
@@ -247,7 +253,7 @@ $TOMB_HELP"
   fi
 
   pass=$(find -L "$passdir" -type f -name '*.gpg' -printf '%P\n' | sed 's/\.gpg//')
-  menu=$(echo "${pass}" | _rofi -p "$mode" -mesg "${HELP}" -kb-custom-1 "${kb_add_pass}" -kb-custom-2 "${kb_copy_otp}" -kb-custom-3 "${kb_delete}" -kb-custom-4 "${kb_edit}" -kb-custom-5 "${kb_close_tomb}" -kb-custom-6 "${kb_open_tomb}" -kb-custom-7 "${kb_copy_email}" -kb-custom-8 "${kb_add_otp}")
+  menu=$(echo "${pass}" | _rofi -mesg "${HELP}" -kb-custom-1 "${kb_add_pass}" -kb-custom-2 "${kb_copy_otp}" -kb-custom-3 "${kb_delete}" -kb-custom-4 "${kb_edit}" -kb-custom-5 "${kb_close_tomb}" -kb-custom-6 "${kb_open_tomb}" -kb-custom-7 "${kb_copy_email}" -kb-custom-8 "${kb_add_otp}")
 
   val=$?
   case "$val" in
@@ -255,8 +261,8 @@ $TOMB_HELP"
   12) deleteMenu ;;
   11) # OTP Copy
     [ "$enable_otp" -eq 0 ] && {
-      timeout 3 pass otp -c "$menu" || die ERROR "failed to copy OTP!" "normal"
-      _notify "Copied to clipboard. Clearing in $time seconds" "normal"
+      timeout 3 pass otp -c "$menu" || die_notify "failed to copy OTP" "normal"
+      notify_wait "Copied to clipboard. Clearing in $time seconds" "normal"
       clearboard
     }
     ;;
@@ -265,10 +271,10 @@ $TOMB_HELP"
   14) [ "$enable_tomb" -eq 0 ] && tomb_close ;;
   15) [ "$enable_tomb" -eq 0 ] && tomb_open ;;
   16) copy_email ;;
-  17) [ "$enable_zbar" -eq 0 ] && append_otp ;;
-  0)
-    pass -c "$menu" || die ERROR "failed to copy the password!" "normal"
-    _notify "Copied to clipboard. Clearing in $time seconds" "normal"
+  17) append_otp ;;
+  0) # Password Copy
+    pass -c "$menu" || die_notify "failed to copy the password" "normal"
+    notify_wait "Copied to clipboard. Clearing in $time seconds" "normal"
     clearboard
     ;;
   esac
@@ -281,7 +287,7 @@ while getopts ":hvfl:t:T:e:" opt; do
     exit 0
     ;;
   e)
-    editor="$OPTARG"
+    EDITOR="$OPTARG"
     ;;
   v)
     version
@@ -300,20 +306,11 @@ while getopts ":hvfl:t:T:e:" opt; do
     time="$OPTARG"
     ;;
   ?)
-    printfc FATAL "invalid option '-$OPTARG'" >&2
-    exit 1
+    die "invalid option '-$OPTARG'"
     ;;
   esac
 done
 
 shift $((OPTIND - 1))
-
-check_command rofi pass || exit 1
-
-[ ! -d "$passdir" ] && die FATAL "no password directory found!" "low"
-
-[ -z "$editor" ] && editor=${EDITOR:-nano}
-term=${term:-xterm}
-time=${time:-5}
 
 main
