@@ -24,7 +24,7 @@
 ## Installation
 
 ```bash
-git clone https://github.com/aocoronel/rofipass
+git clone https://codeberg.org/aocoronel/rofipass
 cd rofipass
 chmod 700 src/rofipass
 mv src/rofipass "$HOME/.local/bin"
@@ -33,28 +33,29 @@ mv src/rofipass "$HOME/.local/bin"
 ## Usage
 
 ```console
-rofipass | A rofi extension for pass
+rofipass | fully-featured rofi script for passwordstore
 
-Usage: rofipass [OPTIONS] <COMMAND>
+Usage: rofipass [OPTIONS]
 
 Options:
-  -e <EDITOR>    Set editor
-  -f             Lift swap restrictions (for tomb)
-  -h             Display this help message and exit
-  -l <LENGTH>    Default password length on generation
-  -t <TERM>      Default terminal emulator (for tomb)
-  -v             Display the current version number
-  -T <SECONDS>   Clearing time
+  -e <EDITOR>   Set editor
+  -f            Lift swap restrictions (tomb-only)
+  -h            Display this help message and exit
+  -l <LENGTH>   Default password length to be generated
+  -t <TERM>     Default terminal emulator (tomb-only)
+  -v            Display the current version number
+  -T <TIME>     Clearing time in seconds
 
 Example:
-  rofipass -f -l 72 -t kitty -e nvim -T 10
+  rofipass -f -l 72 -t kitty -e emacs -T 10
+  rofipass -f -l 72 -t kitty -e "st -e nvim" -T 10
 ```
-
-### Managing the Files
 
 `pass` does not impose any limitations on how the files should be written, but it will always return the first line of the file as the password. `pass-otp`, whatsoever will look for the OTP key in the very last line. Any string in between won't be used, thus can have any data.
 
 `rofipass` also has a way to grab some data from the encrypted file. If a line starts with `email=` it will recognize that, and will allow to copy the email to the clipboard.
+
+You can insert a OTP key to an existing pass, by copying the OTP key or its QR code to the clipboard, and then pressing the binding (`Ctrl+t` by default).
 
 ## Notes
 
